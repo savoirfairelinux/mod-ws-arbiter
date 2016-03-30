@@ -415,7 +415,7 @@ class Ws_arbiter(BaseModule):
         # And we link our page
 
         if self.routes is None or 'push_check_result' in self.routes:
-            route('/push_check_result', callback=get_page, method='POST')
+            route('/push_check_result', callback=do_push_check_result, method='POST')
 
         if self.routes is None or 'restart' in self.routes:
             route('/restart', callback=do_restart, method='POST')
