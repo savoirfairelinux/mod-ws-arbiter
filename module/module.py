@@ -181,9 +181,9 @@ def do_push_checks_perfdata(checks=None):
 
     tnow = time.time()
     for check in checks:
-        hostname = check.get('hostname', None)
+        host_name = check.get('host_name', None)
         if hostname is None:
-            logger.warning('check missing hostname key/value ; check_data=%r', check)
+            logger.warning('check missing host_name key/value ; check_data=%r', check)
             continue
 
         service_description = check.get('service_description', '')
@@ -201,7 +201,7 @@ def do_push_checks_perfdata(checks=None):
             '[%d] PROCESS_%s_OUTPUT;%s;%s;WS_Arbiter|%s' % (
                 check_time,
                 'SERVICE' if service_description else 'HOST',
-                hostname,
+                host_name,
                 service_description,
                 perfdata
             )
