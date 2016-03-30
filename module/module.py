@@ -506,7 +506,7 @@ class Ws_arbiter(BaseModule):
                   method='POST')
 
         if self.routes is None or 'push_check_result_json' in self.routes:
-            route('/push_check_result_jfon',
+            route('/push_check_result_json',
                   callback=do_push_check_result_json,
                   method='POST')
 
