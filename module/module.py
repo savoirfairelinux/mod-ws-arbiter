@@ -119,7 +119,7 @@ def get_commands(time_stamps, hosts, services, return_codes, outputs):
     return commands
 
 
-def parse_do_push_json():
+def parse_do_push_json(request):
     if 'json' in request.get_header('Content-Type', '').lower():
         # Let Bottle do the parsing.
         checks = request.json
@@ -135,9 +135,7 @@ def parse_do_push_json():
     return checks
 
 
-def do_push_check_result():
-    check_auth()
-
+def parse_push_check_result(request):
     try:
         # Getting lists of informations for the commands
         time_stamp_list = request.forms.getall(key='time_stamp')
@@ -155,6 +153,14 @@ def do_push_check_result():
         logger.error("[WS_Arbiter] failed to get the lists: %s" % err)
         commands_list = []
 
+    return commands_list
+
+
+def do_push_check_result():
+    check_auth()
+
+    commands_list = parse_push_check_result(request=request)
+
     # Adding commands to the main queue()
     logger.debug("[WS_Arbiter] commands: %s" % str(sorted(commands_list)))
     for c in sorted(commands_list):
@@ -163,14 +169,15 @@ def do_push_check_result():
     # OK here it's ok, it will return a 200 code
 
 
-def do_push_checks_perfdata():
+def do_push_checks_perfdata(checks=None):
     check_auth()
     # NB NB NB:
     # see: http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.json
     # and http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.MEMFILE_MAX
     # so I use:
 
-    checks = parse_do_push_json()
+    if checks is None:
+        checks = parse_do_push_json(request=request)
 
     tnow = time.time()
     for check in checks:
@@ -200,6 +207,46 @@ def do_push_checks_perfdata():
             )
         )
         app.from_q.put(cmd)
+
+
+def do_push_check_result_json():
+    """
+    TODO:
+    if return_code:
+        call do_push_check_result with output
+    else:
+        call do_push_checks_perfdata with perfdata
+    """
+    check_auth()
+
+    checks = parse_do_push_json(request=request)
+
+    for check in checks:
+        if check.get('return_code'):
+            # We have a return code, let's treat that as a push_check_result
+            # TODO: Merge this logic with do_push_check_result()'s
+            time_stamp_list = [check.get('time_stamp')]
+            host_name_list = [check.get('host_name')]
+            service_description_list = [check.get('service_description')]
+            return_code_list = [check.get('return_code')]
+            output_list = [check.get('output')]
+
+            ext = ExternalCommand(
+                get_commands(
+                    time_stamp_list,
+                    host_name_list,
+                    service_description_list,
+                    return_code_list,
+                    output_list
+                )
+            )
+            app.from_q.put(ext)
+        else:
+            # We don't have a return code, let's treat that as a
+            # push_checks_perfdata.
+            # do_push_checks_perfdata() will add the ExternalCommand to the
+            # app.from_q
+            do_push_checks_perfdata([check])
 
 
 def do_restart():
@@ -455,7 +502,13 @@ class Ws_arbiter(BaseModule):
             route('/recheck', callback=do_recheck, method='POST')
 
         if self.routes is None or 'push_checks_perfdata' in self.routes:
-            route('/push_checks_perfdata', callback=do_push_checks_perfdata, method='POST')
+            route('/push_checks_perfdata', callback=do_push_checks_perfdata,
+                  method='POST')
+
+        if self.routes is None or 'push_check_result_json' in self.routes:
+            route('/push_check_result_jfon',
+                  callback=do_push_check_result_json,
+                  method='POST')
 
     # When you are in "external" mode, that is the main loop of your process
     def main(self):
