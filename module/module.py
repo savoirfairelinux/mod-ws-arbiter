@@ -119,6 +119,22 @@ def get_commands(time_stamps, hosts, services, return_codes, outputs):
     return commands
 
 
+def parse_do_push_json():
+    if 'json' in request.get_header('Content-Type', '').lower():
+        # Let Bottle do the parsing.
+        checks = request.json
+    else:
+        # Someone forgot to put header "Content-Type: application/json" in its
+        # query.
+        logger.warning('[WS_Arbiter] Content-Type is not application/json. Trying to parse JSON anyway')
+        try:
+            checks = json.load(request.body)
+        except Exception as err:
+            logger.error("[WS_Arbiter] Error while parsing JSON data in push checks: %s" % err)
+            abort(400, "An error occured. JSON data malformed.")
+    return checks
+
+
 def do_push_check_result():
     check_auth()
 
@@ -153,21 +169,27 @@ def do_push_checks_perfdata():
     # see: http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.json
     # and http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.MEMFILE_MAX
     # so I use:
-    checks = json.load(request.body)
+
+    checks = parse_do_push_json()
+
     tnow = time.time()
     for check in checks:
         hostname = check.get('hostname', None)
         if hostname is None:
             logger.warning('check missing hostname key/value ; check_data=%r', check)
             continue
+
         service_description = check.get('service_description', '')
         if service_description:
             service_description = service_description.strip()
+
         perfdata = check.get('perfdata', None)
         if perfdata is None:
             logger.warning('check missing output key/value ; check_data=%r', check)
             continue
+
         check_time = check.get('time', tnow)
+
         cmd = ExternalCommand(
             '[%d] PROCESS_%s_OUTPUT;%s;%s;WS_Arbiter|%s' % (
                 check_time,
