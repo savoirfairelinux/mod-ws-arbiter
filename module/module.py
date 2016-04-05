@@ -120,14 +120,23 @@ def get_commands(time_stamps, hosts, services, return_codes, outputs):
 
 
 def parse_do_push_json(request):
-    if 'json' in request.get_header('Content-Type', '').lower():
+    checks = []
+    if 'json' in request.headers.get('Content-Type', '').lower():
         # Let Bottle do the parsing.
-        checks = request.json
-    else:
+        try:
+            checks = request.json
+        except Exception as err:
+            pass
+
+    if not checks:
         # Someone forgot to put header "Content-Type: application/json" in its
         # query.
         logger.warning('[WS_Arbiter] Content-Type is not application/json. Trying to parse JSON anyway')
         try:
+            # NOTE(gstarck):
+            # see: http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.json
+            # and http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.MEMFILE_MAX
+            # so I use:
             checks = json.load(request.body)
         except Exception as err:
             logger.error("[WS_Arbiter] Error while parsing JSON data in push checks: %s" % err)
@@ -135,7 +144,9 @@ def parse_do_push_json(request):
     return checks
 
 
-def parse_push_check_result(request):
+def do_push_check_result():
+    check_auth()
+
     try:
         # Getting lists of informations for the commands
         time_stamp_list = request.forms.getall(key='time_stamp')
@@ -153,14 +164,6 @@ def parse_push_check_result(request):
         logger.error("[WS_Arbiter] failed to get the lists: %s" % err)
         commands_list = []
 
-    return commands_list
-
-
-def do_push_check_result():
-    check_auth()
-
-    commands_list = parse_push_check_result(request=request)
-
     # Adding commands to the main queue()
     logger.debug("[WS_Arbiter] commands: %s" % str(sorted(commands_list)))
     for c in sorted(commands_list):
@@ -171,18 +174,14 @@ def do_push_check_result():
 
 def do_push_checks_perfdata(checks=None):
     check_auth()
-    # NB NB NB:
-    # see: http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.json
-    # and http://bottlepy.org/docs/0.10/api.html?highlight=json#bottle.BaseRequest.MEMFILE_MAX
-    # so I use:
 
     if checks is None:
-        checks = parse_do_push_json(request=request)
+        checks = parse_do_push_json()
 
     tnow = time.time()
     for check in checks:
         host_name = check.get('host_name', None)
-        if hostname is None:
+        if host_name is None:
             logger.warning('check missing host_name key/value ; check_data=%r', check)
             continue
 
@@ -192,17 +191,20 @@ def do_push_checks_perfdata(checks=None):
 
         perfdata = check.get('perfdata', None)
         if perfdata is None:
-            logger.warning('check missing output key/value ; check_data=%r', check)
+            logger.warning('check missing perfdata key/value ; check_data=%r', check)
             continue
 
-        check_time = check.get('time', tnow)
+        output = check.get('output', "WS_Arbiter")
+
+        check_time = check.get('time_stamp', int(tnow))
 
         cmd = ExternalCommand(
-            '[%d] PROCESS_%s_OUTPUT;%s;%s;WS_Arbiter|%s' % (
+            '[%d] PROCESS_%s_OUTPUT;%s;%s;%s|%s' % (
                 check_time,
                 'SERVICE' if service_description else 'HOST',
                 host_name,
                 service_description,
+                output,
                 perfdata
             )
         )
@@ -219,17 +221,23 @@ def do_push_check_result_json():
     """
     check_auth()
 
-    checks = parse_do_push_json(request=request)
+    try:
+        checks = parse_do_push_json(request=request)
+    except Exception as err:
+        logger.error('[WS_Arbiter] ERROR! %s' % err)
+        abort(400, "An error occured. JSON data malformed.")
 
     for check in checks:
-        if check.get('return_code'):
+        logger.warning('[WS_Arbiter] %s' % str(check.items()))
+        if check.get('return_code') is not None:
+            # Required parameters
+            host_name_list = [check.get('host_name', [])]
             # We have a return code, let's treat that as a push_check_result
-            # TODO: Merge this logic with do_push_check_result()'s
-            time_stamp_list = [check.get('time_stamp')]
-            host_name_list = [check.get('host_name')]
-            service_description_list = [check.get('service_description')]
             return_code_list = [check.get('return_code')]
-            output_list = [check.get('output')]
+
+            time_stamp_list = [check.get('time_stamp', [])]
+            service_description_list = [check.get('service_description', [])]
+            output_list = [check.get('output', [])]
 
             ext = ExternalCommand(
                 get_commands(
@@ -238,14 +246,16 @@ def do_push_check_result_json():
                     service_description_list,
                     return_code_list,
                     output_list
-                )
+                )[0]
             )
+            logger.debug('[WS_Arbiter] %r' % ext)
             app.from_q.put(ext)
         else:
             # We don't have a return code, let's treat that as a
             # push_checks_perfdata.
             # do_push_checks_perfdata() will add the ExternalCommand to the
             # app.from_q
+            logger.debug('[WS_Arbiter] %r' % [check])
             do_push_checks_perfdata([check])
 
 
