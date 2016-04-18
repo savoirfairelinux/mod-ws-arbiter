@@ -1,9 +1,16 @@
+shinken-mod-ws-arbiter (1.5) unstable; urgency=medium
+
+  [ Flavien Peyre ]
+  * Sync with upstream
+
+ -- Flavien Peyre <flavien.peyre@savoirfairelinux.com>  Mon, 18 Apr 2016 15:18:42 -0400 
+
 shinken-mod-ws-arbiter (1.4.1-2) unstable; urgency=medium
 
   [ Sebastien Coavoux ]
   * Sync with upstream
 
- -- Sebastien Coavoux <sebastien.coavoux@savoirfairelinux.com> Wed, 22 Apr 2015 16:33:42 -0400 
+ -- Sebastien Coavoux <sebastien.coavoux@savoirfairelinux.com>  Wed, 22 Apr 2015 16:33:42 -0400 
 
 shinken-mod-ws-arbiter (1.4.1-1) unstable; urgency=medium
 
